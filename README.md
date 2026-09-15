@@ -154,11 +154,20 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt   # POS
 带完整类型标注与 docstring。测试用 `httpx.MockTransport` 注入假网络、用确定性生成的
 图片做夹具，**不联网**。
 
-## 本机验证状态（2026-09）
+## 验证状态与已知问题
 
-- `wikimedia` 全链路实测通过：真实搜索 12 张 M1911 → 编号拼图 → 目视校对无误 →
-  `preview` 降采样 → `download` 拿到 2220×1488 原图 → 三条不同角度的搜索 `montage` 合并成 12 格。
-- `--exclude` 实测：用上一轮 manifest 重搜同一查询 → 12 张全被 aHash 命中排除（退出码 2）。
-- 本机网络：`bing` 与 `ddg` 目前返回反爬内容（bing 给出与查询无关的图，ddg 的 i.js 直接 403），
-  `openverse` 超时——都是本机出网环境问题，不是代码问题；`wikimedia` 稳定。
+真实网络下端到端跑通过：
+
+- `wikimedia`：搜索 12 张 M1911 → 编号拼图 → 目视校对 → `preview` 降采样 →
+  `download` 拿到 2220×1488 原图 → 三个不同角度的搜索用 `montage` 合并成 12 格。
+- `--exclude`：用上一轮 manifest 重搜同一查询，12 张全部被 aHash 命中排除（退出码 2）。
 - `mypy --strict` 全绿；`pytest` 273 passed（Python 3.10 与 3.13 各跑一遍）。
+
+**图源可用性取决于出网环境（地区、代理、对方的反爬策略），不是代码问题**：
+
+- `bing` / `ddg` 是抓取型接口，部分网络下会失效：`bing` 会返回**与查询无关**的图，
+  `ddg` 的 `i.js` 直接 403。遇到就换 `--provider`，或配 `HTTPS_PROXY`。
+  注意这类失败**不会报错**——只会给你错的图。
+- `openverse` 在部分网络下会超时。
+- `wikimedia` 是官方 API，最稳；但它**要求带说明的 User-Agent**（本项目默认就是），
+  伪装浏览器会被 403。

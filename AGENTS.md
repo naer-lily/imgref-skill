@@ -126,12 +126,14 @@ tests/          pytest：全部离线，MockTransport 注入假网络
 - **抓取型图源被反爬时不会报错，而是返回无关内容**（实测 bing 查 M1911 返回猫图和乌克兰国旗）。
   所以"有 12 张图"不等于成功——验收必须真的看图。SKILL.md 里已写明这条。
 
-## 本机验证状态（2026-09）
+## 验证状态（改动后请顺手更新这一节）
 
-- `wikimedia` 端到端实测通过（真实搜索 → 拼图目视校对 → preview → download 原图 → montage）。
-- `bing` / `ddg` 在本机返回反爬内容，`openverse` 超时——环境问题，与本仓库代码无关。
-- 自举入口实测环境：Windows 11 + Python **3.10.17**（最低版本）与 3.13.3、
-  `python:3.13-slim`（Debian/glibc）、`python:3.13-alpine`（musl）；全局环境均零污染。
-  另验证：3 进程并发首次自举只建一次环境；Python 3.8 被护栏挡住并给出可操作提示。
-- `mypy --strict` 全绿（按 `python_version = "3.10"` 校验）；
-  `pytest` 273 passed **在 3.10 与 3.13 两个解释器上都跑过**。
+- 端到端：`wikimedia` 真实搜索 → 拼图目视校对 → `preview` → `download` 原图 → `montage` 全通；
+  `--exclude` 用上一轮 manifest 重搜，命中全部排除（退出码 2）。
+- 自举入口：Windows + Python 3.10.17（最低版本）与 3.13.3、`python:3.13-slim`（glibc）、
+  `python:3.13-alpine`（musl）均通过，全局环境零污染；3 进程并发首次自举只建一次环境；
+  Python 3.8 被护栏挡住并给出可操作提示。
+- 静态检查与测试：`mypy --strict` 全绿（按 `python_version = "3.10"` 校验）；
+  `pytest` 273 passed，**在 3.10 与 3.13 两个解释器上都跑过**。
+- 抓取型图源（`bing` / `ddg`）的可用性随出网环境变化：可能返回与查询无关的内容或 403，
+  而且**不会报错**，只会给出错误的图。所以"有 12 张候选"不等于成功——验收必须真的看图。
