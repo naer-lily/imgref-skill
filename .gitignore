@@ -1,8 +1,18 @@
-node_modules/
-dist/
-out/
-data/
-*.log
+# 自举出来的虚拟环境与锁文件
+.venv/
+.venv.lock
+.venv.tmp.*
+
+# 运行产物
+.out/
+
+# Python
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+
+# 本机私人配置（新设计不需要任何 key，但别提交任何东西）
 .env
 .env.local
-.pi/
+*.log

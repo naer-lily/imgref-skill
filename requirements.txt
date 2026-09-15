@@ -1,0 +1,3 @@
+# 运行时依赖：只有两个，且都有各平台 wheel（自举时用 --only-binary=:all:）。
+httpx>=0.27
+Pillow>=10.1

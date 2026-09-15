@@ -1,0 +1,28 @@
+# imgref 的工具配置。
+#
+# 注意：依赖的唯一权威来源是 requirements.txt（自举入口只认它），
+# 这里刻意不写 [project] 表，避免两处漂移。
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = ["imgref", "scripts", "tests"]
+# scripts/imgref.py 与包 imgref/ 同名，必须显式按目录定基名，否则 mypy 认为模块重名。
+explicit_package_bases = true
+mypy_path = "."
+warn_unreachable = true
+show_error_codes = true
+pretty = true
+# 第三方库没带类型信息时不要静默通过，改为显式 override。
+[[tool.mypy.overrides]]
+module = ["PIL.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+asyncio_default_test_loop_scope = "function"
+addopts = "-q --strict-markers --strict-config"
+filterwarnings = ["error"]

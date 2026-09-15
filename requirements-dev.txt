@@ -1,0 +1,5 @@
+# 开发依赖（自举不会安装这些）。
+-r requirements.txt
+mypy>=1.11
+pytest>=8.3
+pytest-asyncio>=0.24
