@@ -202,3 +202,12 @@ def pick_ids(ordinals: Iterable[int], manifest: Path) -> list[str]:
         available = ", ".join(str(n) for n in sorted(by_ordinal)) or "（空）"
         raise UsageError(f"manifest 里没有这些序号：{missing}；可用序号：{available}")
     return [by_ordinal[n].ref_id for n in wanted]
+
+
+def ordinal_map(manifest: Path) -> dict[str, int]:
+    """返回 ``ref_id → 拼图编号``（编号是相对这一份 manifest 的）。
+
+    取图时用它给文件命名，这样"图上的 3 号"落盘就是 ``03-…``，
+    而不是"第 3 个被处理的"。
+    """
+    return {cell.ref_id: cell.ordinal for cell in read_cells(manifest)}

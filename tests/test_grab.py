@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 import pytest
@@ -15,7 +16,9 @@ from tests.helpers import FakeProvider, image_handler, make_image, mock_ctx
 
 PROVIDERS: dict[str, Provider] = {"fake": FakeProvider([])}
 TARGET = "https://img.example.com/fake/1.png"
+TARGET2 = "https://img.example.com/fake/2.png"
 REF = f"fake|{TARGET}"
+REF2 = f"fake|{TARGET2}"
 
 
 async def test_download_writes_original_bytes(tmp_path: Path) -> None:
@@ -33,10 +36,11 @@ async def test_download_writes_original_bytes(tmp_path: Path) -> None:
 async def test_preview_downscales_and_reports(tmp_path: Path) -> None:
     payload = make_image(0x0F0F, 256)
     async with mock_ctx(image_handler({TARGET: payload}), label="-") as ctx:
-        files, _ = await grab(ctx, GrabRequest(ids=(REF,), out_dir=tmp_path, max_edge=64), PROVIDERS)
+        files, _ = await grab(ctx, GrabRequest(ids=(REF,), out_dir=tmp_path, max_edge=64, ordinals={REF: 2}), PROVIDERS)
     assert files[0].downscaled
     assert files[0].source_size == "256x256"
     assert files[0].path.suffix == ".jpg"
+    assert files[0].path.name.startswith("02-"), "降采样改名后编号前缀要保留"
     with Image.open(files[0].path) as image:
         assert max(image.size) == 64
 
@@ -49,17 +53,34 @@ async def test_preview_keeps_small_images_as_is(tmp_path: Path) -> None:
     assert files[0].path.suffix == ".png"
 
 
-async def test_grab_multiple_ids_keeps_order_and_names(tmp_path: Path) -> None:
-    first = make_image(0x0F0F)
-    second = make_image(0x3333)
-    mapping = {TARGET: first, "https://img.example.com/fake/2.png": second}
-    ids = (REF, "fake|https://img.example.com/fake/2.png")
+async def test_grab_multiple_ids_keeps_order(tmp_path: Path) -> None:
+    mapping = {TARGET: make_image(0x0F0F), TARGET2: make_image(0x3333)}
+    ids = (REF, REF2)
     async with mock_ctx(image_handler(mapping), label="-") as ctx:
         files, warnings = await grab(ctx, GrabRequest(ids=ids, out_dir=tmp_path), PROVIDERS)
     assert not warnings
     assert [item.ref_id for item in files] == list(ids)
-    assert files[0].path.name.startswith("01-")
-    assert files[1].path.name.startswith("02-")
+    assert [item.ordinal for item in files] == [None, None]
+
+
+async def test_grab_names_files_with_grid_ordinal(tmp_path: Path) -> None:
+    """给了 manifest 时文件名必须以拼图编号开头，而不是处理次序。"""
+    ids = (REF, REF2)
+    ordinals = {REF: 7, REF2: 3}
+    mapping = {TARGET: make_image(0x0F0F), "https://img.example.com/fake/2.png": make_image(0x3333)}
+    async with mock_ctx(image_handler(mapping), label="-") as ctx:
+        files, _ = await grab(ctx, GrabRequest(ids=ids, out_dir=tmp_path, ordinals=ordinals), PROVIDERS)
+    assert [item.ordinal for item in files] == [7, 3]
+    assert files[0].path.name.startswith("07-")
+    assert files[1].path.name.startswith("03-"), "第二个被处理的图拿到的是 3 号，不是 02"
+
+
+async def test_grab_without_ordinals_adds_no_number_prefix(tmp_path: Path) -> None:
+    """不知道编号时不要拿处理次序冒充编号——干脆不加数字前缀。"""
+    async with mock_ctx(image_handler({TARGET: make_image()}), label="-") as ctx:
+        files, _ = await grab(ctx, GrabRequest(ids=(REF,), out_dir=tmp_path), PROVIDERS)
+    assert files[0].ordinal is None
+    assert not re.match(r"^\d{2,}-", files[0].path.name), "没有编号就不该出现 NN- 形式的前缀"
 
 
 async def test_grab_isolates_single_failure(tmp_path: Path) -> None:

@@ -8,6 +8,9 @@ import pytest
 
 from imgref.cli import GrabCmd, MontageCmd, SearchCmd, _parse, _parse_pick, main
 from imgref.errors import UsageError
+from imgref.grid import GridSpec
+from imgref.manifest import Cell, write_manifest
+from imgref.types import ImageResult
 
 
 def test_root_help_lists_commands(capsys: pytest.CaptureFixture[str]) -> None:
@@ -175,6 +178,35 @@ def test_parse_download_ids_file(tmp_path: Path) -> None:
     command = _parse(["download", "--ids-file", str(path)])
     assert isinstance(command, GrabCmd)
     assert command.ids == ("a|https://x/1.jpg",)
+
+
+def test_parse_download_ordinals_follow_manifest(tmp_path: Path) -> None:
+    """--from 里的编号要跟着 ID 一起传下去，供文件命名使用。"""
+    manifest = tmp_path / "results.json"
+    cells = [
+        Cell(ordinal=number, image=ImageResult(provider="fake", image_url=f"https://x/{number}.png"))
+        for number in (3, 7)
+    ]
+    write_manifest(
+        manifest,
+        provider="fake",
+        query="q",
+        label=None,
+        spec=GridSpec(),
+        grid_path=tmp_path / "grid.jpg",
+        cells=cells,
+        warnings=[],
+    )
+    command = _parse(["download", "--pick", "3,7", "--from", str(manifest)])
+    assert isinstance(command, GrabCmd)
+    assert command.ids == ("fake|https://x/3.png", "fake|https://x/7.png")
+    assert command.ordinals == {"fake|https://x/3.png": 3, "fake|https://x/7.png": 7}
+
+
+def test_parse_download_without_from_has_no_ordinals() -> None:
+    command = _parse(["download", "fake|https://x/1.png"])
+    assert isinstance(command, GrabCmd)
+    assert command.ordinals == {}
 
 
 def test_parse_montage() -> None:

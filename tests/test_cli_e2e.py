@@ -149,7 +149,23 @@ def test_preview_with_pick_and_from(
     assert cli.main(["preview", "--pick", "2", "--from", str(manifest), "--out", str(target), "--max", "32"]) == 0
     files = list(target.iterdir())
     assert len(files) == 1
-    assert files[0].name.startswith("01-")
+    assert files[0].name.startswith("02-"), "文件名必须跟拼图上的 2 号一致，而不是处理次序"
+
+
+def test_download_naming_matches_grid_numbers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """一次挑多个：文件名按拼图编号，不能按处理次序（挑 3、7 就得是 03- 和 07-）。"""
+    provider = FakeProvider([[make_result(index=index) for index in range(1, 8)]])
+    _patch(monkeypatch, image_handler(_thumbs(*range(0x0F0F, 0x0F0F + 7)) | _originals(*range(0x0F0F, 0x0F0F + 7))), provider)
+    assert cli.main(["search", "fake", "q", "--out", str(tmp_path), "--limit", "7", "--cell", "48"]) == 0
+    manifest = next(tmp_path.rglob("results.json"))
+    target = tmp_path / "picked"
+    assert cli.main(["download", "--pick", "3,7", "--from", str(manifest), "--out", str(target)]) == 0
+    names = sorted(path.name for path in target.iterdir())
+    assert names[0].startswith("03-")
+    assert names[1].startswith("07-")
 
 
 def test_download_ids_file(

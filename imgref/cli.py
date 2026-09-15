@@ -16,7 +16,7 @@ import argparse
 import asyncio
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal, NoReturn, TypeAlias
@@ -27,7 +27,7 @@ from imgref.ctx import open_ctx
 from imgref.errors import EXIT_EMPTY, EXIT_OK, EXIT_USAGE, ImgrefError, NoResultsError, ProviderError, UsageError
 from imgref.grab import GrabRequest, collect_ids, grab
 from imgref.grid import GridSpec
-from imgref.manifest import pick_ids
+from imgref.manifest import ordinal_map, pick_ids
 from imgref.montage import run_montage
 from imgref.providers import PROVIDERS, get_provider, provider_rows
 from imgref.providers.base import Provider, parse_options
@@ -93,6 +93,7 @@ class GrabCmd:
     ids: tuple[str, ...]
     out_dir: Path
     max_edge: int
+    ordinals: Mapping[str, int]
     g: GlobalOpts
 
 
@@ -264,7 +265,9 @@ def _build_grab_parser(kind: Literal["preview", "download"]) -> _Parser:
         description=description,
         epilog=(
             "ID 形如 `wikimedia|https://upload.wikimedia.org/.../a.png`，即 search 输出候选表里的 id 列。\n"
-            "多个 ID 可并列给出，或用 --ids-file（每行一个），或用 --pick 配合 --from。"
+            "多个 ID 可并列给出，或用 --ids-file（每行一个），或用 --pick 配合 --from。\n"
+            "配合 --from 时落盘文件名以拼图编号开头（例如 `03-colt_m1911.png`），与图上的数字一致；\n"
+            "没给 --from 就不知道编号，此时文件名不加数字前缀。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -369,12 +372,17 @@ def _parse_grab(kind: Literal["preview", "download"], argv: list[str]) -> GrabCm
     )
     if not ids:
         raise UsageError("没有给任何 ID；用法示例：imgref download 'bing|https://…' --out ./refs")
+    # 给了 --from 就知道每个 ID 在拼图上的编号，落盘文件名据此对齐（未知的就不编号）
+    known = ordinal_map(manifest) if manifest is not None else {}
+    wanted = set(ids)
+    ordinals = {ref_id: number for ref_id, number in known.items() if ref_id in wanted}
     default_out = default_cache_dir() / "preview" if kind == "preview" else default_out_root() / "downloads"
     return GrabCmd(
         kind=kind,
         ids=tuple(ids),
         out_dir=Path(ns.out).expanduser() if ns.out else default_out,
         max_edge=max(int(ns.max), 0),
+        ordinals=ordinals,
         g=_global_opts(ns),
     )
 
@@ -488,7 +496,11 @@ async def _do_grab(cmd: GrabCmd, console: Console) -> int:
         no_cache=g.no_cache,
         concurrency=g.concurrency,
     ) as ctx:
-        files, warnings = await grab(ctx, GrabRequest(ids=cmd.ids, out_dir=cmd.out_dir, max_edge=cmd.max_edge), PROVIDERS)
+        files, warnings = await grab(
+            ctx,
+            GrabRequest(ids=cmd.ids, out_dir=cmd.out_dir, max_edge=cmd.max_edge, ordinals=cmd.ordinals),
+            PROVIDERS,
+        )
     for item in files:
         note = f"  ({item.source_size} → 降采样)" if item.downscaled else ""
         console.out(f"{item.path.resolve()}{note}")

@@ -58,6 +58,7 @@ python3 scripts/imgref.py montage .out/m1911/*/results.json --out .out/m1911/mer
 ```bash
 # 用户说"要第 3 张和第 7 张"
 python3 scripts/imgref.py download --pick 3,7 --from .out/m1911/<run>/results.json --out ./refs
+# 落盘是 03-…、07-…，跟图上的数字对得上
 
 # 或者直接给完整 ID（ID 是自包含的，可以脱离上下文单独传递）
 python3 scripts/imgref.py download 'wikimedia|https://upload.wikimedia.org/.../M1911A1.png' --out ./refs
@@ -65,6 +66,9 @@ python3 scripts/imgref.py download 'wikimedia|https://upload.wikimedia.org/.../M
 # 拼图格子太小、想看细节
 python3 scripts/imgref.py preview --pick 3 --from <manifest> --max 1024
 ```
+
+**落盘文件名的数字前缀 = 拼图上的编号**（只要你带了 `--from`）。不带 `--from` 就
+不知道编号，此时文件名不加数字前缀——不会拿"第几个下载的"冒充编号。
 
 `preview` 和 `download` **都支持多选**（位置参数给多个、`--ids-file` 给一文件一行、
 或 `--pick 1,3,7 --from <manifest>`）。

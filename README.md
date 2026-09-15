@@ -50,6 +50,8 @@ imgref montage <results.json>... --out FILE    把多轮拼图合并成一张（
 ```
 
 - `preview` / `download` **都是多选**：位置参数给多个、`--ids-file`、或 `--pick 1,3,7 --from <manifest>`。
+- 配合 `--from` 取图时，**落盘文件名以拼图编号开头**（`03-colt_m1911.png`），与图上的数字一致；
+  没给 `--from` 就不知道编号，此时不加数字前缀。
 - `--exclude <旧 manifest>` 按 **aHash** 排除上一轮出现过的图（迭代重搜用）。
 - `imgref search --help` 看图源索引；`imgref search <provider> --help` 看该图源的**专属参数**。
 

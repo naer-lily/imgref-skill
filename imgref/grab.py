@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import io
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PIL import Image
@@ -33,6 +33,12 @@ class GrabRequest:
     out_dir: Path
     max_edge: int = 0
     """大于 0 时把长边收敛到该值（``preview`` 用）；0 表示保留原始字节。"""
+    ordinals: Mapping[str, int] = field(default_factory=dict)
+    """``ref_id → 拼图编号``，用来让落盘文件名跟图上的数字对得上。
+
+    只有调用方给了 ``--from <manifest>`` 时才知道编号；不知道就不加数字前缀，
+    而不是拿"处理次序"冒充编号。
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +50,8 @@ class Grabbed:
     bytes_len: int
     downscaled: bool
     source_size: str
+    ordinal: int | None = None
+    """这张图在拼图上的编号；调用方没提供 manifest 时为 ``None``。"""
 
 
 async def grab(ctx: Ctx, req: GrabRequest, providers: Mapping[str, Provider]) -> tuple[list[Grabbed], list[str]]:
@@ -77,7 +85,9 @@ async def grab(ctx: Ctx, req: GrabRequest, providers: Mapping[str, Provider]) ->
         data = await ctx.get_image(url, headers=headers_for(provider, url))
         ext = sniff_ext(data, url)
         stem = safe_slug(Path(url.split("?")[0]).stem or domain_of(url), limit=40)
-        dest = unique_path(req.out_dir / f"{index:02d}-{stem}{ext}")
+        ordinal = req.ordinals.get(raw)
+        prefix = f"{ordinal:02d}-" if ordinal is not None else ""
+        dest = unique_path(req.out_dir / f"{prefix}{stem}{ext}")
         source_size = _size_label(data)
         downscaled = False
         if req.max_edge > 0:
@@ -85,7 +95,14 @@ async def grab(ctx: Ctx, req: GrabRequest, providers: Mapping[str, Provider]) ->
             if downscaled:
                 dest = dest.with_suffix(".jpg")
         dest.write_bytes(data)
-        return Grabbed(ref_id=raw, path=dest, bytes_len=len(data), downscaled=downscaled, source_size=source_size)
+        return Grabbed(
+            ref_id=raw,
+            path=dest,
+            bytes_len=len(data),
+            downscaled=downscaled,
+            source_size=source_size,
+            ordinal=ordinal,
+        )
 
     gathered = await asyncio.gather(
         *(one(index, item) for index, item in enumerate(plan, start=1)),
