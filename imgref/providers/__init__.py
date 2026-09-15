@@ -20,13 +20,26 @@ from imgref.errors import UsageError
 from imgref.providers.base import Provider, missing_env
 from imgref.providers.bing import Bing
 from imgref.providers.ddg import DuckDuckGo
+from imgref.providers.duitang import Duitang
 from imgref.providers.openverse import Openverse
+from imgref.providers.safebooru import Safebooru
 from imgref.providers.serper import Serper
 from imgref.providers.wikimedia import Wikimedia
+from imgref.providers.yandere import Yandere
 
 __all__ = ["PROVIDERS", "get_provider", "provider_rows"]
 
-_ALL: Final[tuple[Provider, ...]] = (Bing(), DuckDuckGo(), Wikimedia(), Openverse(), Serper())
+# 通用网络图源 → 图库 API → 中文图片站 → 付费接口。
+_ALL: Final[tuple[Provider, ...]] = (
+    Bing(),
+    DuckDuckGo(),
+    Wikimedia(),
+    Openverse(),
+    Yandere(),
+    Safebooru(),
+    Duitang(),
+    Serper(),
+)
 
 PROVIDERS: Final[dict[str, Provider]] = {provider.name: provider for provider in _ALL}
 

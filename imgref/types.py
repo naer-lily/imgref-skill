@@ -38,6 +38,7 @@ class ImageResult:
         width: 原图宽（图源声明值，未必准确）。
         height: 原图高（图源声明值，未必准确）。
         license: 版权标识（wikimedia / openverse 会给）。
+        source: 原作者 / 原始出处 URL（booru 类图库会给，例如 pixiv 作品页）。
     """
 
     provider: str
@@ -48,6 +49,7 @@ class ImageResult:
     width: int | None = None
     height: int | None = None
     license: str | None = None
+    source: str | None = None
 
     @property
     def ref_id(self) -> str:

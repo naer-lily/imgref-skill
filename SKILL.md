@@ -98,13 +98,29 @@ python3 scripts/imgref.py search wikimedia "M1911 pistol" --exclude .out/prev/re
 
 ## 图源选择
 
-| provider | 适合 | 说明 |
-|---|---|---|
-| `wikimedia` | 公共领域照片、技术图纸、军械/历史资料 | 稳定，带版权信息，**首选** |
-| `openverse` | CC 授权图库 | 匿名可用；某些网络下不可达 |
-| `bing` | 通用网络图片 | 抓取型；可能被反爬（返回与查询无关的结果） |
-| `ddg` | 通用网络图片 | 抓取型；i.js 接口容易 403 |
-| `serper` | 谷歌图片 | 需要 `SERPER_API_KEY`，默认不可用 |
+| provider | 适合 | 查询串怎么写 | 说明 |
+|---|---|---|---|
+| `yandere` | **插画 / 背景 / 角色参考（画师主场）** | booru 标签，空格分隔（`landscape cat_ears`） | 官方 API；原图尺寸、原作者页齐全；默认只出 safe |
+| `safebooru` | 同类插画参考，站点只收 SFW | booru 标签 | Gelbooru API，稳定 |
+| `duitang` | 中文图片站（照片 / 壁纸 / 素材） | 中文自然语言 | 非官方 napi，无需 key |
+| `wikimedia` | 公共领域照片、技术图纸、军械 / 历史资料 | 自然语言 | 官方 API，带版权信息 |
+| `openverse` | CC 授权图库 | 自然语言 | 匿名可用 |
+| `bing` | 通用网络图片 | 自然语言 | 抓取型；可能被反爬（返回与查询无关的内容） |
+| `ddg` | 通用网络图片 | 自然语言 | 抓取型；`i.js` 容易 403 |
+| `serper` | 谷歌图片 | 自然语言 | 需要 `SERPER_API_KEY` |
+
+**抓取型图源失效时不会报错，只会给错的图**——你看拼图时必须真的核对内容。不对就换 provider。
+
+### booru 类图源（`yandere` / `safebooru`）的标签词表
+
+这两个的查询串是**站内标签**，不是自然语言，而且各家词表**不通用**：同一个概念在
+danbooru 叫 `no_humans`，在 yande.re 可能根本不存在。标签不存在时接口返回
+「200 + 空数组」，于是表现为**退出码 2、一条都没有**，看起来像"没搜到"。
+
+- 先用一个确凿存在的单标签试水（`landscape`、`cat_ears`、`swimsuit` 这类），再往上叠。
+- 一次堆五个标签很容易全落空；宁可多搜几次。
+- 想看原作者：读 manifest 的 `source` 字段（实测给的是 pixiv / x 的原帖链接）。
+- `yandere` 默认加 `rating:s`；要放宽用 `--rating all`（可能含露骨内容）。
 
 用 `python3 scripts/imgref.py search --help` 看图源列表，
 `python3 scripts/imgref.py search <provider> --help` 看某个图源的**专属参数**
@@ -118,6 +134,9 @@ python3 scripts/imgref.py search wikimedia "M1911 pistol" --exclude .out/prev/re
 
 - **不需要任何 API key。**
 - 网络受限时走代理：`export HTTPS_PROXY=http://127.0.0.1:7890`（`NO_PROXY` 也认）。
+- **PyPI 不通的环境**：首次运行要装依赖，如果 `pypi.org` 不可达，设个镜像就行
+  （pip 原生认这个环境变量，不需要改代码）：
+  `export PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`
 - 默认 User-Agent 是诚实的 `imgref/1.0 (...)`——维基媒体这类站点会对浏览器 UA
   返回 403。需要时用 `IMGREF_USER_AGENT` 覆盖。
 - 图片缓存（默认落系统缓存目录）**不是状态**：删掉只会变慢，不改变任何结果。

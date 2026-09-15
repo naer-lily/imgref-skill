@@ -21,7 +21,7 @@ uv venv --python 3.10 --seed .venv     # 按最低支持版本建，能挡住高
 uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt   # POSIX: .venv/bin/python
 
 .venv/Scripts/python.exe -m mypy       # strict；改完必须全绿
-.venv/Scripts/python.exe -m pytest     # 273 个用例，全部离线，不许联网
+.venv/Scripts/python.exe -m pytest     # 323 个用例，全部离线，不许联网
 .venv/Scripts/python.exe scripts/imgref.py --help
 .venv/Scripts/python.exe scripts/smoke.py wikimedia "M1911 pistol" --download   # 真机 smoke（会联网）
 ```
@@ -41,7 +41,9 @@ imgref/
   montage.py    helper：合并多轮拼图（不发网络）
   grid.py       拼图渲染 + 版式数学（GridSpec）+ ASCII 约束
   manifest.py   results.json 读写、--exclude 集合、--pick 编号翻译
-  providers/    base.py（Protocol + collect 分页驱动）+ 5 个图源适配器
+  providers/    base.py（Protocol + collect 分页驱动 + as_int）+ 8 个图源适配器
+                bing/ddg（抓取型）· wikimedia/openverse（图库 API）
+                yandere/safebooru（booru 标签制）· duitang（中文站 napi）· serper（付费）
   ctx.py        网络通道：超时/重试/退避/并发/体积上限/代理/缓存
   cache.py      按 URL 的内容缓存（不是状态）
   imaging.py    aHash / 尺寸探测 / 扩展名嗅探
@@ -56,8 +58,9 @@ tests/          pytest：全部离线，MockTransport 注入假网络
 
 1. **ID 必须自包含**：`<provider>|<image_url>`。拼图上的序号只是视觉抓手，**不是 ID**。
    一旦让 ID 依赖 manifest，`preview`/`download` 就得携带状态，"无状态"就是假的。
-2. **manifest 是副产品，不是必需品**：`preview`/`download` 不读它；它只服务溯源、
-   `--pick --from`、`montage`、`--exclude`。任何"必须有 manifest 才能工作"的改动都是回退。
+2. **manifest 是副产品，不是必需品**：`preview`/`download` 不读它；它只服务溯源
+   （`page_url` 是作品页、`source` 是原作者页）、`--pick --from`、`montage`、`--exclude`。
+   任何"必须有 manifest 才能工作"的改动都是回退。
 3. **`--exclude` 按 aHash 而不是 ID**：同一张图换 URL/缩略图尺寸/图源，按 ID 根本排不掉。
    manifest 里必须存 `ahash`，否则这个功能会悄悄失效。
 4. **拼图默认 4×3 / cell 375 → 1536×1310**，正好卡在视觉模型 1536 长边预算内。
@@ -125,15 +128,26 @@ tests/          pytest：全部离线，MockTransport 注入假网络
   要断言 `!= BROWSER_UA`，不能断言"没有 user-agent 头"。
 - **抓取型图源被反爬时不会报错，而是返回无关内容**（实测 bing 查 M1911 返回猫图和乌克兰国旗）。
   所以"有 12 张图"不等于成功——验收必须真的看图。SKILL.md 里已写明这条。
+- **加图源前先 dump 一次真实响应，别信文档和自己的记忆**。踩过两次同类坑：
+  bing 的 `m` blob 里其实没有 `mw`/`mh`（只有 tile 的布局尺寸），页面 URL 叫 `purl` 不是 `pur`；
+  booru 的字段名是 `file_url`（下划线），不是 Gelbooru 文档风格的 `fileurl`。
+  两次都是**夹具照着自己以为的字段名写**，于是单测全绿而真机全坏。
+  同理要看**嵌套结构**（堆糖的图在 `object_list[].photo.path`，宽高还是字符串）。
+- **同一个概念在不同 booru 的标签词表里可能根本不存在**：`scenery`/`no_humans` 在 yande.re
+  返回 0 条，`landscape`/`cat_ears` 有。0 条的表现是「200 + 空数组」→ 退出码 2，
+  看起来像"没搜到"，其实是标签写错了。
 
 ## 验证状态（改动后请顺手更新这一节）
 
 - 端到端：`wikimedia` 真实搜索 → 拼图目视校对 → `preview` → `download` 原图 → `montage` 全通；
   `--exclude` 用上一轮 manifest 重搜，命中全部排除（退出码 2）。
+- 新增图源实测通过（都是真实网络 + 目视校对拼图）：`yandere`（`landscape`，6 张插画背景，
+  原图尺寸与原作者页都有）、`safebooru`（`landscape`）、`duitang`（中文关键词，返回 `2000x3640`
+  真实尺寸）。booru 的 `rating:s` 默认过滤实测只返回 safe。
 - 自举入口：Windows + Python 3.10.17（最低版本）与 3.13.3、`python:3.13-slim`（glibc）、
   `python:3.13-alpine`（musl）均通过，全局环境零污染；3 进程并发首次自举只建一次环境；
   Python 3.8 被护栏挡住并给出可操作提示。
 - 静态检查与测试：`mypy --strict` 全绿（按 `python_version = "3.10"` 校验）；
-  `pytest` 273 passed，**在 3.10 与 3.13 两个解释器上都跑过**。
+  `pytest` 323 passed，**在 3.10 与 3.13 两个解释器上都跑过**。
 - 抓取型图源（`bing` / `ddg`）的可用性随出网环境变化：可能返回与查询无关的内容或 403，
   而且**不会报错**，只会给出错误的图。所以"有 12 张候选"不等于成功——验收必须真的看图。

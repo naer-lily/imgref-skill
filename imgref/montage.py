@@ -98,6 +98,7 @@ def run_montage(
                     "width": cell.image.width,
                     "height": cell.image.height,
                     "license": cell.image.license,
+                    "source": cell.image.source,
                     "ahash": cell.ahash,
                     "local": cell.local,
                 }

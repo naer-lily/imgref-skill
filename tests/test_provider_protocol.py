@@ -11,9 +11,30 @@ import pytest
 
 from imgref.errors import UsageError
 from imgref.providers import PROVIDERS, get_provider, provider_rows
-from imgref.providers.base import ProvidesHeaders, headers_for, missing_env, parse_options
+from imgref.providers.base import ProvidesHeaders, as_int, headers_for, missing_env, parse_options
 from imgref.types import Arg
 from tests.helpers import FakeProvider
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (804, 804),
+        ("804", 804),
+        (" 804 ", 804),
+        ("-3", -3),
+        (0, 0),
+        (True, None),
+        (False, None),
+        (8.5, None),
+        ("abc", None),
+        ("", None),
+        (None, None),
+    ],
+)
+def test_as_int(value: object, expected: int | None) -> None:
+    """真实接口的数字字段类型很随意（堆糖的宽高就是字符串）。"""
+    assert as_int(value) == expected
 
 
 def test_registry_is_populated_and_consistent() -> None:
@@ -26,7 +47,7 @@ def test_registry_is_populated_and_consistent() -> None:
 
 
 def test_registry_covers_expected_sources() -> None:
-    assert set(PROVIDERS) == {"bing", "ddg", "wikimedia", "openverse", "serper"}
+    assert set(PROVIDERS) == {"bing", "ddg", "wikimedia", "openverse", "yandere", "safebooru", "duitang", "serper"}
 
 
 def test_get_provider_unknown_lists_alternatives() -> None:

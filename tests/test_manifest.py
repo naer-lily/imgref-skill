@@ -25,6 +25,7 @@ def _cell(ordinal: int, *, provider: str = "bing", index: int = 1, ahash: str | 
             width=100,
             height=50,
             license="CC0",
+            source="https://www.pixiv.net/artworks/1",
         ),
         ahash=ahash,
         thumb_file=f"thumbs/{ordinal:02d}.jpg",
@@ -51,6 +52,7 @@ def test_write_and_read_round_trip(tmp_path: Path) -> None:
     assert [cell.ordinal for cell in cells] == [1, 2]
     assert cells[0].image.image_url == "https://img.example.com/1.jpg"
     assert cells[0].image.license == "CC0"
+    assert cells[0].image.source == "https://www.pixiv.net/artworks/1"
     assert cells[0].ahash == "1010"
     assert cells[0].thumb_file == "thumbs/01.jpg"
     assert cells[0].ref_id == "bing|https://img.example.com/1.jpg"

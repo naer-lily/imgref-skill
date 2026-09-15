@@ -27,6 +27,7 @@ __all__ = [
     "ParsesOptions",
     "Provider",
     "ProvidesHeaders",
+    "as_int",
     "collect",
     "headers_for",
     "missing_env",
@@ -35,6 +36,23 @@ __all__ = [
 
 MAX_PAGES: int = 4
 """单次 ``collect`` 最多翻几页，防止游标实现有 bug 时无限循环。"""
+
+
+def as_int(value: object) -> int | None:
+    """把图源给的"数字"转成 ``int``，转不了就返回 ``None``。
+
+    真实接口的字段类型很随意：同一家的 ``width`` 可能是 ``804``（int）或 ``"804"``
+    （str），堆糖就是后者。``bool`` 虽然是 ``int`` 的子类，但语义上不是数字，排除掉。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("-").isdigit():
+            return int(text)
+    return None
 
 
 @runtime_checkable
