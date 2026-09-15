@@ -37,6 +37,10 @@ class Options:
 def parse_bing_html(page: str, limit: int) -> list[ImageResult]:
     """从必应异步图片页里解析候选（``a.iusc`` 的 ``m="…"`` JSON 块）。
 
+    实测（2026-09）blob 的字段是 ``sid/cturl/cid/purl/murl/turl/md5/shkey/t/mid/desc``：
+    **没有原图宽高**，页面 URL 字段叫 ``purl``。``mw``/``mh`` 只在旧版或部分变体里出现，
+    所以仍然容忍性地读一下，但不要依赖它。
+
     Args:
         page: HTML 文本。
         limit: 最多返回多少条。
@@ -58,7 +62,7 @@ def parse_bing_html(page: str, limit: int) -> list[ImageResult]:
         thumb_url = meta.get("turl")
         if not isinstance(image_url, str) or not image_url or not isinstance(thumb_url, str) or not thumb_url:
             continue
-        page_url = meta.get("pur")
+        page_url = meta.get("purl")
         out.append(
             ImageResult(
                 provider="bing",

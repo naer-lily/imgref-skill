@@ -4,7 +4,7 @@
 # 这里刻意不写 [project] 表，避免两处漂移。
 
 [tool.mypy]
-python_version = "3.13"
+python_version = "3.10"
 strict = true
 files = ["imgref", "scripts", "tests"]
 # scripts/imgref.py 与包 imgref/ 同名，必须显式按目录定基名，否则 mypy 认为模块重名。

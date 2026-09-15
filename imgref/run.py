@@ -9,14 +9,14 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from imgref.ctx import Ctx
 from imgref.errors import ImgrefError, NoResultsError
 from imgref.fsutil import link_or_copy, prune_dirs, safe_slug
 from imgref.grid import GridCell, GridSpec, ascii_title, render_grid
-from imgref.imaging import ahash, sniff_ext
+from imgref.imaging import ahash, image_size, sniff_ext
 from imgref.manifest import Cell, load_exclude, write_manifest
 from imgref.providers.base import Provider, collect, headers_for
 from imgref.types import ImageResult
@@ -125,6 +125,7 @@ async def run_search(ctx: Ctx, req: SearchRequest) -> SearchOutcome:
     grid_path = run_dir / "grid.jpg"
     cells: list[Cell] = []
     grid_cells: list[GridCell] = []
+    size_labels: dict[str, str] = {}
     for cell, data in kept:
         ext = sniff_ext(data, cell.image.thumb)
         dest = thumbs_dir / f"{cell.ordinal:02d}{ext}"
@@ -132,6 +133,7 @@ async def run_search(ctx: Ctx, req: SearchRequest) -> SearchOutcome:
         stored = replace(cell, thumb_file=(Path("thumbs") / dest.name).as_posix())
         cells.append(stored)
         grid_cells.append(GridCell(label=str(stored.ordinal), data=data, note=domain_of(stored.image.page_url)[:22]))
+        size_labels[stored.ref_id] = _size_label(stored.image, data)
 
     render_grid(grid_path, grid_cells, req.spec, ascii_title(req.provider.name, req.label, req.query))
 
@@ -154,7 +156,7 @@ async def run_search(ctx: Ctx, req: SearchRequest) -> SearchOutcome:
         Row(
             ordinal=cell.ordinal,
             ref_id=cell.ref_id,
-            size=cell.image.size_label,
+            size=size_labels.get(cell.ref_id, "?"),
             source=domain_of(cell.image.page_url) or cell.image.provider,
             title=cell.image.title or "",
         )
@@ -172,6 +174,20 @@ async def run_search(ctx: Ctx, req: SearchRequest) -> SearchOutcome:
     )
 
 
+def _size_label(image: ImageResult, data: bytes) -> str:
+    """候选表里的尺寸列。
+
+    图源声明了原图尺寸就用它；没声明（例如必应，它的 ``m`` blob 里根本没有宽高）
+    就退回**缩略图的实测尺寸**并加 ``~`` 前缀，免得让人以为那是原图尺寸。
+    """
+    if image.width and image.height:
+        return image.size_label
+    measured = image_size(data)
+    if measured is None:
+        return "?"
+    return f"~{measured[0]}x{measured[1]}"
+
+
 def _store(ctx: Ctx, url: str, data: bytes, dest: Path) -> None:
     """把缩略图放进本次运行目录；缓存里已有同 URL 的文件就硬链接过去。"""
     cache = ctx.cache
@@ -186,7 +202,7 @@ def _store(ctx: Ctx, url: str, data: bytes, dest: Path) -> None:
 
 def _make_run_dir(out_root: Path, provider: str, query: str) -> Path:
     """生成 ``<out_root>/<UTC 时间戳>-<provider>-<slug>`` 形式的运行目录。"""
-    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     slug = safe_slug(query, limit=24) or "query"
     run_dir = out_root / f"{stamp}-{provider}-{slug}"
     suffix = 2

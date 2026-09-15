@@ -33,7 +33,7 @@ LOCK = ROOT / ".venv.lock"
 GUARD = "IMGREF_BOOTSTRAPPED"
 LOCK_TIMEOUT = 300.0
 ENTRY = Path(__file__).resolve()
-REQUIRED_PYTHON = (3, 13)
+REQUIRED_PYTHON = (3, 10)
 
 
 def _check_python() -> str | None:

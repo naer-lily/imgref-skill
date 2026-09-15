@@ -19,7 +19,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal, NoReturn
+from typing import Any, Final, Literal, NoReturn, TypeAlias
 
 from imgref import __version__
 from imgref.console import Console, display_width
@@ -108,7 +108,8 @@ class MontageCmd:
     g: GlobalOpts
 
 
-type Command = SearchCmd | GrabCmd | MontageCmd
+# 三个子命令的解析结果，`_execute` 用 match 分派。
+Command: TypeAlias = SearchCmd | GrabCmd | MontageCmd
 
 
 class _CleanExit(Exception):
@@ -218,7 +219,8 @@ def _build_search_parser(provider: Provider) -> _Parser:
         description=f"用 {provider.name} 搜一次，生成一张编号拼图与一张候选表。",
         epilog=(
             "输出：stdout 依次为 `grid:` 与 `data:` 两个绝对路径、一张候选表（列：序号 / 尺寸 / 来源 / id）。\n"
-            "警告（缩略图下载失败、候选超出拼图容量等）同样打印在 stdout 上。\n"
+            "尺寸列 `2632x1868` 是图源声明的原图尺寸；`~250x188` 表示该图源未声明原图尺寸，\n"
+            "给出的是缩略图的实测尺寸。警告（缩略图下载失败、候选超出拼图容量等）也打印在 stdout 上。\n"
             "运行目录为 <out>/<UTC 时间戳>-<provider>-<slug>/，内含 grid.jpg、results.json 与 thumbs/。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,

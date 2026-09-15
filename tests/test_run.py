@@ -61,6 +61,21 @@ async def test_run_search_produces_grid_table_and_manifest(out_root: Path) -> No
     assert cells[0].ahash is not None
 
 
+async def test_run_search_marks_unknown_original_size_with_tilde(out_root: Path) -> None:
+    """图源没声明原图尺寸（如必应）时，尺寸列给缩略图实测值并加 ~ 前缀，不要装作知道。"""
+    provider = FakeProvider([[make_result(index=1, width=None, height=None)]])
+    async with mock_ctx(image_handler({"https://thumb.example.com/fake/1.png": make_image(0x0F0F, 64)}), label="fake") as ctx:
+        outcome = await run_search(ctx, _request(out_root, provider))
+    assert outcome.rows[0].size == "~64x64"
+
+
+async def test_run_search_reports_undeclared_size_when_thumb_undecodable(out_root: Path) -> None:
+    provider = FakeProvider([[make_result(index=1, width=None, height=None)]])
+    async with mock_ctx(image_handler({"https://thumb.example.com/fake/1.png": make_image(0x0F0F)}), label="fake") as ctx:
+        outcome = await run_search(ctx, _request(out_root, provider))
+    assert outcome.rows[0].size == "~64x64"
+
+
 async def test_run_search_writes_manifest_relative_to_run_dir(out_root: Path) -> None:
     provider = FakeProvider([[make_result(index=1)]])
     async with mock_ctx(image_handler(_thumbs(0x0F0F)), label="fake") as ctx:

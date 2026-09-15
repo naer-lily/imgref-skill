@@ -38,7 +38,7 @@ data: /abs/path/.out/20260915-143556-wikimedia-m1911-pistol/results.json
 | 形态 | Node 常驻进程 + config 段 + 改一次要重启 | 一个 Python 脚本 + SKILL.md |
 | 配置 | `.env` + API key + 自定义供应商端点 | **零 key 零配置** |
 | 谁做编排 | 服务端的会话状态机（轮次 a/b/c、TTL、分组） | **调用方 AI**，自己并发自己挑 |
-| 依赖 | Node + sharp + pi-ai | Python 3.13 + httpx + Pillow |
+| 依赖 | Node + sharp + pi-ai | Python 3.10+ + httpx + Pillow |
 
 ## 命令
 
@@ -124,19 +124,35 @@ POSIX 用 `os.execv` 替换当前进程（内存不叠加）、Windows 用子进
 依赖全落在技能自己的 `.venv` 里，全局零污染；日常调用就是
 `python3 scripts/imgref.py ...`，不需要任何前缀。
 
+自举入口在下面这些环境实测过（全局环境都保持干净）：
+
+| 环境 | 首次运行 | 之后每次 |
+|---|---|---|
+| Windows 11 + Python 3.10.17（最低版本） | 14.3s（建 venv + 装依赖） | 0.23s |
+| Windows 11 + Python 3.13.3 | 11.5s | 0.22s |
+| `python:3.13-slim`（Debian/glibc，容器） | 30.6s | 0.77s |
+| `python:3.13-alpine`（musl，容器） | 32.0s | — |
+
+另外验证过：3 个进程同时首次自举只会建一次环境（锁生效）；Python 3.8 会被护栏
+挡住并给出可操作提示，而不是抛出语法错误。
+
+装依赖用 `--only-binary=:all:`（不在小内存机器上触发本地编译）；两个依赖在
+glibc 和 musl 上都有现成 wheel。若将来引入只有源码包的依赖，这一条会拦下它。
+
 ## 开发
 
 ```bash
-uv venv --python 3.13 --seed .venv
+uv venv --python 3.10 --seed .venv        # 按最低支持版本建环境，能挡住用高版本语法
 uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt   # POSIX 用 .venv/bin/python
 
 .venv/Scripts/python.exe -m mypy      # strict，48 个文件
-.venv/Scripts/python.exe -m pytest    # 260 个用例，全部离线
+.venv/Scripts/python.exe -m pytest    # 273 个用例，全部离线
 .venv/Scripts/python.exe scripts/smoke.py wikimedia "M1911 pistol" --download   # 真机 smoke
 ```
 
-语言级别 Python 3.13，`mypy --strict`，全部公开函数带完整类型标注与 docstring。
-测试用 `httpx.MockTransport` 注入假网络、用确定性生成的图片做夹具，**不联网**。
+语言级别 **Python 3.10+**（`mypy` 也按 3.10 校验），`mypy --strict`，全部公开函数
+带完整类型标注与 docstring。测试用 `httpx.MockTransport` 注入假网络、用确定性生成的
+图片做夹具，**不联网**。
 
 ## 本机验证状态（2026-09）
 
@@ -145,4 +161,4 @@ uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt   # POS
 - `--exclude` 实测：用上一轮 manifest 重搜同一查询 → 12 张全被 aHash 命中排除（退出码 2）。
 - 本机网络：`bing` 与 `ddg` 目前返回反爬内容（bing 给出与查询无关的图，ddg 的 i.js 直接 403），
   `openverse` 超时——都是本机出网环境问题，不是代码问题；`wikimedia` 稳定。
-- 260 个测试全绿，`mypy --strict` 无问题。
+- `mypy --strict` 全绿；`pytest` 273 passed（Python 3.10 与 3.13 各跑一遍）。

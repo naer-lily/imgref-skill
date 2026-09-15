@@ -15,7 +15,7 @@ import random
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, TypeVar
 
 import httpx
 
@@ -23,6 +23,8 @@ from imgref.cache import BlobCache
 from imgref.errors import ProviderError
 
 __all__ = ["BROWSER_UA", "DEFAULT_UA", "Ctx", "open_ctx"]
+
+_T = TypeVar("_T")
 
 HONEST_UA: Final = "imgref/1.0 (reference image search; +https://github.com/naer-lily/imgref-skill)"
 """默认 User-Agent：**诚实**地把工具自己和联系方式报上去。
@@ -203,7 +205,7 @@ class Ctx:
             raise self._error(ProviderError(self.label, "http", f"图片内容过小（{len(data)} 字节）：{url}"))
         return data
 
-    async def _with_retry[T](self, what: str, fn: Callable[[], Awaitable[T]]) -> T:
+    async def _with_retry(self, what: str, fn: Callable[[], Awaitable[_T]]) -> _T:
         """执行 ``fn``，对可重试失败退避重试，耗尽后抛 :class:`ProviderError`。"""
         last: _Retryable = _Retryable("network", "未发起任何尝试")
         for attempt in range(self._attempts):

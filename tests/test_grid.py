@@ -67,6 +67,20 @@ def test_render_grid_renders_placeholders(tmp_path: Path) -> None:
     assert path.is_file()
 
 
+def test_empty_slots_have_no_caption_bar(tmp_path: Path) -> None:
+    """候选比格子少时，空位只留白——不能画黑编号条（半张图黑条看着像坏了）。"""
+    spec = GridSpec(cols=1, rows=2, cell=64)
+    path = tmp_path / "grid.jpg"
+    render_grid(path, [GridCell(label="1", data=make_image(0x0F0F))], spec)
+    with Image.open(path) as image:
+        first_caption_y = spec.header + spec.pad + spec.cell + spec.caption // 2
+        bottom_y = spec.header + spec.pad + spec.cell + spec.caption + spec.gap + spec.cell // 2
+        first = image.getpixel((spec.pad + 4, first_caption_y))
+        bottom = image.getpixel((spec.pad + 4, bottom_y))
+    assert isinstance(first, tuple) and sum(first) < 200, "第一行应有黑编号条"
+    assert isinstance(bottom, tuple) and sum(bottom) > 600, "第二行（空位）应留白"
+
+
 def test_render_grid_truncates_to_capacity(tmp_path: Path) -> None:
     spec = GridSpec(cols=1, rows=1, cell=64)
     cells = [GridCell(label=str(index), data=make_image(seed)) for index, seed in enumerate((0x0F0F, 0x3333), start=1)]

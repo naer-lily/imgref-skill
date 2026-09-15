@@ -1,5 +1,6 @@
 # 自举出来的虚拟环境与锁文件
 .venv/
+.venv*/
 .venv.lock
 .venv.tmp.*
 

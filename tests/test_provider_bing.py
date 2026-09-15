@@ -13,9 +13,13 @@ from imgref.providers.bing import Bing, Options, parse_bing_html
 from tests.helpers import mock_ctx
 
 BING_HTML = (
-    '<a class="iusc" m="{&quot;murl&quot;:&quot;https://x.com/a.jpg&quot;,&quot;turl&quot;:&quot;https://x.com/a-t.jpg&quot;,'
-    '&quot;t&quot;:&quot;Hello \\&quot;World\\&quot;&quot;,&quot;pur&quot;:&quot;https://www.x.com/p&quot;,&quot;mw&quot;:1024,&quot;mh&quot;:768}"></a>'
-    '<a class="iusc" style="x" m="{&quot;murl&quot;:&quot;https://x.com/b.jpg&quot;,&quot;turl&quot;:&quot;https://x.com/b-t.jpg&quot;}"></a>'
+    # 真实形态（2026-09 实测）：purl 是页面 URL，blob 里没有原图宽高
+    '<a aria-label="Image result" role="link" class="iusc" style="height:180px;width:239px" '
+    'm="{&quot;cid&quot;:&quot;7rIK3f+4&quot;,&quot;purl&quot;:&quot;https://www.x.com/p&quot;,'
+    '&quot;murl&quot;:&quot;https://x.com/a.jpg&quot;,&quot;turl&quot;:&quot;https://x.com/a-t.jpg&quot;,'
+    '&quot;md5&quot;:&quot;eeb2&quot;,&quot;t&quot;:&quot;Hello \\&quot;World\\&quot;&quot;,&quot;desc&quot;:&quot;pistol&quot;}"></a>'
+    # 旧版/变体才有的 mw/mh：仍然容忍性地读
+    '<a class="iusc" style="x" m="{&quot;murl&quot;:&quot;https://x.com/b.jpg&quot;,&quot;turl&quot;:&quot;https://x.com/b-t.jpg&quot;,&quot;mw&quot;:1024,&quot;mh&quot;:768}"></a>'
     '<a class="iusc" m="{not json}"></a>'
     '<a class="iusc" m="{&quot;turl&quot;:&quot;https://x.com/no-full.jpg&quot;}"></a>'
 )
@@ -30,9 +34,14 @@ def test_parse_bing_html() -> None:
     assert first.thumb_url == "https://x.com/a-t.jpg"
     assert first.title == 'Hello "World"'
     assert first.page_url == "https://www.x.com/p"
-    assert (first.width, first.height) == (1024, 768)
-    assert results[1].title is None
-    assert results[1].width is None
+    assert (first.width, first.height) == (None, None), "真实 blob 没有 mw/mh，尺寸应为未知"
+
+
+def test_parse_bing_html_tolerates_legacy_dimensions() -> None:
+    """旧版 blob 里可能有 mw/mh；有就读，没有也不报错。"""
+    second = parse_bing_html(BING_HTML, 10)[1]
+    assert (second.width, second.height) == (1024, 768)
+    assert second.page_url is None
 
 
 def test_parse_bing_html_respects_limit() -> None:

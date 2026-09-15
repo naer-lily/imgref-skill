@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Any, Final, TypeAlias
 
 from imgref.errors import IdError
 
@@ -20,12 +20,9 @@ __all__ = ["ID_SEP", "Arg", "Cursor", "ImageResult", "Page", "parse_ref_id"]
 ID_SEP: Final = "|"
 """自包含 ID 中 provider 与 URL 的分隔符。"""
 
-type Cursor = str
-"""不透明分页游标。
-
-谁家按 page、谁家按 offset、谁家给 continuation token，全部由 provider 自己吞掉，
-框架只负责原样回传。
-"""
+# 不透明分页游标：谁家按 page、谁家按 offset、谁家给 continuation token，
+# 全部由 provider 自己吞掉，框架只负责原样回传。
+Cursor: TypeAlias = str
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,11 +17,11 @@
 ## 常用命令
 
 ```bash
-uv venv --python 3.13 --seed .venv
+uv venv --python 3.10 --seed .venv     # 按最低支持版本建，能挡住高版本语法
 uv pip install --python .venv/Scripts/python.exe -r requirements-dev.txt   # POSIX: .venv/bin/python
 
 .venv/Scripts/python.exe -m mypy       # strict；改完必须全绿
-.venv/Scripts/python.exe -m pytest     # 260 个用例，全部离线，不许联网
+.venv/Scripts/python.exe -m pytest     # 273 个用例，全部离线，不许联网
 .venv/Scripts/python.exe scripts/imgref.py --help
 .venv/Scripts/python.exe scripts/smoke.py wikimedia "M1911 pistol" --download   # 真机 smoke（会联网）
 ```
@@ -81,8 +81,14 @@ tests/          pytest：全部离线，MockTransport 注入假网络
 
 ## 类型与风格约定
 
-- **Python ≥ 3.13**，新特性尽管用：PEP 695（`type X = ...`、`def f[T](...)`）、`match`、
-  `@dataclass(frozen=True, slots=True)`、`datetime.UTC`。
+- **Python ≥ 3.10**（最低版本是硬约束，为了能在老一点的服务器上跑）。可用的新东西：
+  `match`、`@dataclass(frozen=True, slots=True)`、`X | Y` 注解、`zip(strict=True)`。
+- **不要用 3.11+ / 3.12+ 的语法和标准库**，它们在 3.10 上会直接语法错误或 ImportError：
+  - ✗ PEP 695：`type X = ...`、`def f[T](...)`、`class C[T]` → 用 `X: TypeAlias = ...` + 模块级 `TypeVar`
+  - ✗ `datetime.UTC`（3.11+）→ 用 `datetime.timezone.utc`
+  - ✗ `StrEnum` / `asyncio.TaskGroup` / `ExceptionGroup` / `except*` / `typing.Self` / `@override`
+  - 需要时再逐个确认；`mypy` 配了 `python_version = "3.10"` 能挡住大部分，但它挡不住运行时的东西，
+    所以**改完务必在 3.10 解释器上跑一遍 `pytest`**。
 - **`mypy --strict` 必须全绿**（`files = ["imgref", "scripts", "tests"]`）。
   因为 `scripts/imgref.py` 与包 `imgref/` 同名，配置里开了 `explicit_package_bases`。
 - **所有公开函数/类/模块都要 docstring**；类型标注完整。docstring 与注释用中文。
@@ -111,7 +117,9 @@ tests/          pytest：全部离线，MockTransport 注入假网络
   （不要退回手写代理选择逻辑）。
 - **`Image.getdata()` 已废弃**：aHash 用 `Image.convert("L").resize((8,8)).tobytes()`。
 - **`ImageFont.load_default(size=N)` 需要 Pillow ≥ 10.1**，好处是零字体文件依赖。
-- **`--only-binary=:all:`** 在 Alpine/musl 上会失败（没有 manylinux wheel），文档里要提醒。
+- **`--only-binary=:all:` 在 Alpine/musl 上实测可用**（Pillow 有 musllinux wheel，httpx 是纯 Python）：
+  容器里 `python:3.13-alpine` 自举成功。但这条约束仍然要留着——将来加进一个只有 sdist 的依赖，
+  它就会在小内存机器上触发本地编译并失败；那时要么换依赖，要么改这里的策略。
 - **pip 安装要给 `--quiet`**，否则首次运行会把 pip 的输出混进 CLI 的 stdout。
 - **裸 `mock_ctx` 客户端的默认 UA 是 `python-httpx/x`**：测"图源有没有伪装 UA"时，
   要断言 `!= BROWSER_UA`，不能断言"没有 user-agent 头"。
@@ -122,4 +130,8 @@ tests/          pytest：全部离线，MockTransport 注入假网络
 
 - `wikimedia` 端到端实测通过（真实搜索 → 拼图目视校对 → preview → download 原图 → montage）。
 - `bing` / `ddg` 在本机返回反爬内容，`openverse` 超时——环境问题，与本仓库代码无关。
-- `mypy --strict` 全绿；`pytest` 260 passed。
+- 自举入口实测环境：Windows 11 + Python **3.10.17**（最低版本）与 3.13.3、
+  `python:3.13-slim`（Debian/glibc）、`python:3.13-alpine`（musl）；全局环境均零污染。
+  另验证：3 进程并发首次自举只建一次环境；Python 3.8 被护栏挡住并给出可操作提示。
+- `mypy --strict` 全绿（按 `python_version = "3.10"` 校验）；
+  `pytest` 273 passed **在 3.10 与 3.13 两个解释器上都跑过**。

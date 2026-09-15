@@ -148,7 +148,12 @@ def render_grid(path: Path, cells: list[GridCell] | tuple[GridCell, ...], spec: 
         x = spec.pad + col * (spec.cell + spec.gap)
         y = spec.header + spec.pad + row * (spec.cell + spec.caption + spec.gap)
         cell = used[index] if index < len(used) else None
-        if cell is not None and cell.data:
+        if cell is None:
+            # 候选数少于格子数：留白 + 细边框就够了，不画编号条
+            # （否则半张图都是黑条，看着像坏了）
+            draw.rectangle((x, y, x + spec.cell, y + spec.cell), outline=_BORDER)
+            continue
+        if cell.data:
             try:
                 canvas.paste(_fit(cell.data, spec.cell), (x, y))
             except (UnidentifiedImageError, OSError, ValueError):
@@ -157,12 +162,11 @@ def render_grid(path: Path, cells: list[GridCell] | tuple[GridCell, ...], spec: 
             _draw_placeholder(draw, x, y, spec, placeholder_font)
         caption_top = y + spec.cell
         draw.rectangle((x, caption_top, x + spec.cell, caption_top + spec.caption), fill=_CAPTION_BG)
-        if cell is not None:
-            middle = caption_top + spec.caption / 2
-            draw.text((x + 11, middle), cell.label, anchor="lm", fill=_WHITE, font=label_font)
-            if cell.note:
-                offset = draw.textlength(cell.label, font=label_font)
-                draw.text((x + 11 + offset + 10, middle + 2), cell.note[:22], anchor="lm", fill=_NOTE_FG, font=note_font)
+        middle = caption_top + spec.caption / 2
+        draw.text((x + 11, middle), cell.label, anchor="lm", fill=_WHITE, font=label_font)
+        if cell.note:
+            offset = draw.textlength(cell.label, font=label_font)
+            draw.text((x + 11 + offset + 10, middle + 2), cell.note[:22], anchor="lm", fill=_NOTE_FG, font=note_font)
         draw.rectangle((x, y, x + spec.cell, caption_top + spec.caption), outline=_BORDER)
     path.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(path, format="JPEG", quality=spec.quality, optimize=True, subsampling=0)
