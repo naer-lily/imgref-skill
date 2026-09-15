@@ -135,24 +135,27 @@ def _root_help() -> str:
     """顶层帮助。"""
     return f"""usage: {PROG} <command> [options]
 
-无状态的多图源参考图搜索。一次 search = 一个图源 + 一个查询串 → 一张编号拼图 + 一张候选表。
-要搜几个角度、几个图源，由调用方自己并发发几条命令；要不要把多张拼图合并，也用 montage。
+多图源参考图搜索。一次 search 处理一个图源与一个查询串，产出编号拼图 grid.jpg、
+候选表（stdout）与溯源清单 results.json。
 
 commands:
   search <provider> "<query>"    搜索并生成编号拼图与候选表
-  preview <id>...                按 ID 取图到缓存目录（可降采样），用来看大图
-  download <id>... --out DIR     按 ID 取全分辨率原图
-  montage <results.json>...      把多轮拼图合并成一张（helper，不发网络请求）
+  preview <id>...                取图到缓存目录，可选降采样
+  download <id>... --out DIR     取全分辨率原图
+  montage <results.json>...      把多份结果合并成一张拼图（离线，不发请求）
 
-ID 是自包含的：形如 `bing|https://example.com/a.jpg`，可以直接复制、单独传递。
-拼图上的数字只是给眼睛用的抓手，不是 ID；从候选表里抄同一行的完整 ID 来用。
+ID: <provider>|<image_url>，自包含，可直接作为 preview / download 的参数。
+    候选表的 id 列即完整 ID；拼图上的序号仅供查阅，不是 ID。
 
-常用:
-  {PROG} search --help                 查看图源列表
-  {PROG} search bing --help            查看 bing 的完整参数（含专属参数）
-  {PROG} download <id> --out ./refs    下载选定图
+退出码: 0 成功（含部分失败，细节见 stdout 的 warn: 行）；1 用法或抓取失败；2 无结果。
 
-全局: -v 调试信息打到 stderr | -q 只留警告 | --no-cache | --timeout | --proxy
+示例:
+  {PROG} search wikimedia "M1911 pistol"
+  {PROG} search bing "M1911 left side" --limit 6 --label side
+  {PROG} download --pick 1,3,7 --from <results.json> --out ./refs
+  {PROG} montage <a>/results.json <b>/results.json --out merged.jpg
+
+全局: -v 调试信息到 stderr | -q 只输出警告与错误 | --no-cache | --timeout | --proxy
 """
 
 
@@ -212,10 +215,11 @@ def _build_search_parser(provider: Provider) -> _Parser:
     """构造 ``search`` 的解析器（已绑定某个图源）。"""
     parser = _Parser(
         prog=f"{PROG} search {provider.name}",
-        description=f"用 {provider.name} 搜一次，生成一张编号拼图与候选表。",
+        description=f"用 {provider.name} 搜一次，生成一张编号拼图与一张候选表。",
         epilog=(
-            "查询串由调用方自己写（工具不做任何自然语言处理）。\n"
-            "要搜多个角度或多个图源，就并发多发几条 search，再用 montage 合并。"
+            "输出：stdout 依次为 `grid:` 与 `data:` 两个绝对路径、一张候选表（列：序号 / 尺寸 / 来源 / id）。\n"
+            "警告（缩略图下载失败、候选超出拼图容量等）同样打印在 stdout 上。\n"
+            "运行目录为 <out>/<UTC 时间戳>-<provider>-<slug>/，内含 grid.jpg、results.json 与 thumbs/。"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -228,9 +232,9 @@ def _build_search_parser(provider: Provider) -> _Parser:
     group.add_argument("--cols", type=int, default=4, metavar="N", help="拼图列数（默认 4）")
     group.add_argument("--rows", type=int, default=3, metavar="N", help="拼图行数（默认 3）")
     group.add_argument("--cell", type=int, default=375, metavar="PX", help="每格边长（默认 375）")
-    group.add_argument("--max-edge", type=int, default=1536, metavar="PX", help="拼图长边上限（默认 1536，视觉模型的预算）")
-    group.add_argument("--exclude", action="append", default=[], metavar="FILE", help="排除旧 manifest 里出现过的图（按 aHash，可重复；用于迭代重搜）")
-    group.add_argument("--no-json", action="store_true", help="不写 results.json（ID 自包含，manifest 只是溯源副产品）")
+    group.add_argument("--max-edge", type=int, default=1536, metavar="PX", help="拼图长边上限（默认 1536）")
+    group.add_argument("--exclude", action="append", default=[], metavar="FILE", help="按 aHash 排除旧 manifest 里出现过的图（可重复）")
+    group.add_argument("--no-json", action="store_true", help="不写 results.json")
     _add_provider_args(parser, provider)
     parser.add_argument("query", metavar='"<query>"', help="查询串")
     return parser
@@ -246,7 +250,7 @@ def _add_pick_args(parser: _Parser) -> None:
 def _build_grab_parser(kind: Literal["preview", "download"]) -> _Parser:
     """构造 ``preview`` / ``download`` 的解析器（两者共用一份实现）。"""
     if kind == "preview":
-        description = "按 ID 取图到缓存目录并可选降采样——拼图格子太小、需要看大图时用。"
+        description = "按 ID 取图到缓存目录并可选降采样。"
         default_out = "<缓存目录>/preview"
         max_help = "长边收敛到该值（默认 1024）；0 表示不降采样"
     else:
@@ -256,7 +260,10 @@ def _build_grab_parser(kind: Literal["preview", "download"]) -> _Parser:
     parser = _Parser(
         prog=f"{PROG} {kind}",
         description=description,
-        epilog="ID 直接从 search 输出的候选表里抄；永远不要自己拼 URL。",
+        epilog=(
+            "ID 形如 `wikimedia|https://upload.wikimedia.org/.../a.png`，即 search 输出候选表里的 id 列。\n"
+            "多个 ID 可并列给出，或用 --ids-file（每行一个），或用 --pick 配合 --from。"
+        ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("ids", nargs="*", metavar="<id>", help="自包含 ID，可给多个")
@@ -464,8 +471,6 @@ async def _do_search(cmd: SearchCmd, console: Console) -> int:
         console.out(f"{row.ordinal:>3}  {row.size.ljust(width)}  {row.source.ljust(source_width)}  {row.ref_id}")
     for warning in outcome.warnings:
         console.warn(warning)
-    console.out("")
-    console.out("看图上的数字，抄同一行的完整 ID 给 preview / download；不要自己拼 URL。")
     return EXIT_OK
 
 

@@ -198,6 +198,28 @@ def test_parse_pick_rejects_junk() -> None:
         _parse_pick("a,b")
 
 
-def test_help_mentions_id_semantics(capsys: pytest.CaptureFixture[str]) -> None:
+def test_download_help_documents_id_format(capsys: pytest.CaptureFixture[str]) -> None:
     assert main(["download", "--help"]) == 0
-    assert "永远不要自己拼 URL" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "id 列" in out
+    assert "--ids-file" in out
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--help"],
+        ["search", "--help"],
+        ["search", "bing", "--help"],
+        ["search", "ddg", "--help"],
+        ["preview", "--help"],
+        ["download", "--help"],
+        ["montage", "--help"],
+    ],
+)
+def test_help_never_coaches_the_caller(argv: list[str], capsys: pytest.CaptureFixture[str]) -> None:
+    """CLI 的 --help 只描述接口，不写"你该怎么做"——那些话属于 SKILL.md。"""
+    assert main(argv) == 0
+    out = capsys.readouterr().out
+    for phrase in ("调用方", "工具不做", "不要自己拼", "看图上的数字"):
+        assert phrase not in out, f"--help 里不该出现流程指导：{phrase!r}"

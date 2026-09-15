@@ -67,7 +67,7 @@ def test_search_end_to_end(
     assert "grid: " in out and "data: " in out
     assert "fake|https://img.example.com/fake/1.png" in out
     assert "1200x900" in out
-    assert "不要自己拼 URL" in out
+    assert "看图上的数字" not in out, "stdout 只给结果，不给流程指导"
     grid = next(tmp_path.rglob("grid.jpg"))
     assert grid.is_file()
     assert next(tmp_path.rglob("results.json")).is_file()
