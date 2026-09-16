@@ -11,9 +11,42 @@ import pytest
 
 from imgref.errors import UsageError
 from imgref.providers import PROVIDERS, get_provider, provider_rows
-from imgref.providers.base import ProvidesHeaders, as_int, headers_for, missing_env, parse_options
+from imgref.providers.base import (
+    ProvidesHeaders,
+    as_int,
+    format_tag_problems,
+    headers_for,
+    is_plain_tag,
+    missing_env,
+    parse_options,
+)
 from imgref.types import Arg
 from tests.helpers import FakeProvider
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("landscape", True),
+        ("cat_ears", True),
+        ("hatsune_miku_(cosplay)", True),
+        ("rating:s", False),
+        ("order:score", False),
+        ("score:>10", False),
+        ("-cat", False),
+        ("cat*", False),
+        ("~cat", False),
+        ("", False),
+    ],
+)
+def test_is_plain_tag(tag: str, expected: bool) -> None:
+    """只有普通标签才该拿去查标签表；元语法/通配/排除交给图源自己理解。"""
+    assert is_plain_tag(tag) is expected
+
+
+def test_format_tag_problems() -> None:
+    text = format_tag_problems("yande.re", ["no_humans", "scenery"], {"no_humans": ["no_bra", "no_hat"]})
+    assert text == "yande.re 上没有这些标签：no_humans（相近：no_bra、no_hat）；scenery（没有相近的）"
 
 
 @pytest.mark.parametrize(

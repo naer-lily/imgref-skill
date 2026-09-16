@@ -81,9 +81,12 @@ async def run_search(ctx: Ctx, req: SearchRequest) -> SearchOutcome:
     """
     started = time.monotonic()
     warnings: list[str] = []
-    results = await collect(req.provider, ctx, req.query, limit=req.limit, opts=req.opts)
+    collected = await collect(req.provider, ctx, req.query, limit=req.limit, opts=req.opts)
+    warnings.extend(collected.notes)
+    results = list(collected.results)
     if not results:
-        raise NoResultsError(f"{req.provider.name} 没有返回结果：{req.query!r}")
+        detail = f"（{collected.notes[0]}）" if collected.notes else ""
+        raise NoResultsError(f"{req.provider.name} 没有返回结果：{req.query!r}{detail}")
     excluded = load_exclude(req.exclude)
 
     async def fetch_thumb(result: ImageResult) -> tuple[ImageResult, bytes | None, str | None]:

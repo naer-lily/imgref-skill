@@ -7,8 +7,10 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
+import pytest
 
-from imgref.providers.safebooru import Options, Safebooru, parse_safebooru_json
+from imgref.errors import ProviderError
+from imgref.providers.safebooru import Options, Safebooru, parse_safebooru_json, parse_tag_xml
 from tests.helpers import mock_ctx
 
 SAFEBOORU_JSON: list[Any] = [
@@ -72,16 +74,44 @@ def test_safebooru_has_no_private_args() -> None:
     assert Safebooru().parse_options(Namespace()) == Options()
 
 
-async def test_safebooru_search_builds_gelbooru_query() -> None:
-    seen: list[httpx.Request] = []
+def _tag_xml(entries: tuple[tuple[str, int], ...]) -> str:
+    """造 Gelbooru tag 接口的 XML 响应（这个端点只给 XML）。"""
+    body = " ".join(f'<tag type="0" count="{count}" name="{name}" ambiguous="false" id="1"/>' for name, count in entries)
+    return f'<?xml version="1.0" encoding="UTF-8"?><tags type="array">{body}</tags>'
+
+
+def _handler(
+    posts: list[Any],
+    known: tuple[str, ...] = ("cat_ears", "landscape", "cat"),
+    *,
+    seen: list[httpx.Request] | None = None,
+) -> Callable[[httpx.Request], httpx.Response]:
+    """按 ``s=`` 参数分派：``s=tag`` 走标签校验，``s=post`` 才是帖子查询。"""
 
     def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(200, json=SAFEBOORU_JSON, headers={"content-type": "application/json"})
+        if seen is not None:
+            seen.append(request)
+        if request.url.params.get("s") == "tag":
+            name = request.url.params.get("name")
+            if name is not None:
+                return httpx.Response(200, text=_tag_xml(((name, 9774),) if name in known else ()), headers={"content-type": "application/xml"})
+            pattern = (request.url.params.get("name_pattern") or "").rstrip("%")
+            return httpx.Response(200, text=_tag_xml(((f"{pattern}_ish", 3),)), headers={"content-type": "application/xml"})
+        return httpx.Response(200, json=posts, headers={"content-type": "application/json"})
 
-    async with mock_ctx(handler, label="safebooru") as ctx:
+    return handler
+
+
+def _posts_request(seen: list[httpx.Request]) -> httpx.Request:
+    """从请求序列里挑出帖子查询。"""
+    return next(request for request in seen if request.url.params.get("s") == "post")
+
+
+async def test_safebooru_search_builds_gelbooru_query() -> None:
+    seen: list[httpx.Request] = []
+    async with mock_ctx(_handler(SAFEBOORU_JSON, seen=seen), label="safebooru") as ctx:
         page = await Safebooru().search(ctx, "cat_ears", limit=10, cursor=None, opts=Options())
-    params = seen[0].url.params
+    params = _posts_request(seen).url.params
     assert params["page"] == "dapi"
     assert params["s"] == "post"
     assert params["q"] == "index"
@@ -90,26 +120,82 @@ async def test_safebooru_search_builds_gelbooru_query() -> None:
     assert params["pid"] == "0", "pid 从 0 起"
     assert len(page.results) == 2
     assert page.next_cursor is None
+    assert page.notes == ()
+
+
+async def test_safebooru_validates_tags_before_searching() -> None:
+    seen: list[httpx.Request] = []
+    async with mock_ctx(_handler(SAFEBOORU_JSON, seen=seen), label="safebooru") as ctx:
+        await Safebooru().search(ctx, "landscape", limit=5, cursor=None, opts=Options())
+    lookups = [request for request in seen if request.url.params.get("s") == "tag"]
+    assert [request.url.params.get("name") for request in lookups] == ["landscape"]
+    assert len(seen) == 2, "一次校验 + 一次搜索"
+
+
+async def test_safebooru_drops_missing_tag_and_gives_near_misses() -> None:
+    seen: list[httpx.Request] = []
+    async with mock_ctx(_handler(SAFEBOORU_JSON, seen=seen), label="safebooru") as ctx:
+        page = await Safebooru().search(ctx, "landscape no_humans", limit=5, cursor=None, opts=Options())
+    assert _posts_request(seen).url.params["tags"] == "landscape"
+    assert len(page.notes) == 1
+    assert "no_humans" in page.notes[0]
+    assert "no_humans_ish" in page.notes[0], "不存在时要再用 name_pattern 找相近的"
+    assert "已改用：landscape" in page.notes[0]
+
+
+async def test_safebooru_all_tags_missing_is_a_query_error() -> None:
+    seen: list[httpx.Request] = []
+    async with mock_ctx(_handler([], known=(), seen=seen), label="safebooru") as ctx:
+        with pytest.raises(ProviderError) as info:
+            await Safebooru().search(ctx, "no_humans scenery", limit=5, cursor=None, opts=Options())
+    assert info.value.kind == "query"
+    assert not [request for request in seen if request.url.params.get("s") == "post"]
+
+
+async def test_safebooru_skips_validation_when_lookup_fails() -> None:
+    posts: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params.get("s") == "tag":
+            return httpx.Response(200, text="not xml at all", headers={"content-type": "text/html"})
+        posts.append(request)
+        return httpx.Response(200, json=SAFEBOORU_JSON, headers={"content-type": "application/json"})
+
+    async with mock_ctx(handler, label="safebooru") as ctx:
+        page = await Safebooru().search(ctx, "landscape", limit=5, cursor=None, opts=Options())
+    assert posts[0].url.params["tags"] == "landscape", "校验拿不到结果就按原样搜"
+    assert len(page.notes) == 1
+    assert "标签校验跳过" in page.notes[0]
+
+
+def test_parse_tag_xml() -> None:
+    assert parse_tag_xml(_tag_xml((("landscape", 9774), ("scenery", 64812)))) == [("landscape", 9774), ("scenery", 64812)]
+
+
+def test_parse_tag_xml_empty_means_tag_absent() -> None:
+    """对方对不存在的标签就回空 ``<tags>``——这是"标签不存在"的正当信号。"""
+    assert parse_tag_xml(_tag_xml(())) == []
+
+
+@pytest.mark.parametrize("text", ["", "@@@", "not xml at all"])
+def test_parse_tag_xml_rejects_non_xml(text: str) -> None:
+    """不是 XML 说明"读不到答案"，绝不能当成"标签不存在"——否则对方一改接口就全判错。"""
+    with pytest.raises(ProviderError) as info:
+        parse_tag_xml(text)
+    assert info.value.kind == "parse"
 
 
 async def test_safebooru_advances_pid_on_full_page() -> None:
     full = [{**SAFEBOORU_JSON[0], "id": index} for index in range(3)]
     seen: list[httpx.Request] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(request)
-        return httpx.Response(200, json=full, headers={"content-type": "application/json"})
-
-    async with mock_ctx(handler, label="safebooru") as ctx:
+    async with mock_ctx(_handler(full, seen=seen), label="safebooru") as ctx:
         page = await Safebooru().search(ctx, "cat", limit=3, cursor="2", opts=Options())
-    assert seen[0].url.params["pid"] == "2"
+    assert _posts_request(seen).url.params["pid"] == "2"
     assert page.next_cursor == "3"
+    assert not [request for request in seen if request.url.params.get("s") == "tag"], "翻页不重复校验"
 
 
 async def test_safebooru_marks_cursor_exhausted() -> None:
-    handler: Callable[[httpx.Request], httpx.Response] = lambda request: httpx.Response(
-        200, json=[SAFEBOORU_JSON[0]], headers={"content-type": "application/json"}
-    )
-    async with mock_ctx(handler, label="safebooru") as ctx:
+    async with mock_ctx(_handler([SAFEBOORU_JSON[0]]), label="safebooru") as ctx:
         page = await Safebooru().search(ctx, "cat", limit=10, cursor=None, opts=Options())
     assert page.next_cursor is None

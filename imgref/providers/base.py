@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from argparse import Namespace
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from imgref.types import Arg, Cursor, ImageResult, Page
@@ -24,18 +25,54 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MAX_PAGES",
+    "Collected",
     "ParsesOptions",
     "Provider",
     "ProvidesHeaders",
     "as_int",
     "collect",
+    "format_tag_problems",
     "headers_for",
+    "is_plain_tag",
     "missing_env",
     "parse_options",
 ]
 
 MAX_PAGES: int = 4
 """单次 ``collect`` 最多翻几页，防止游标实现有 bug 时无限循环。"""
+
+
+@dataclass(frozen=True, slots=True)
+class Collected:
+    """一次 :func:`collect` 的产出：候选 + 图源带出来的说明。"""
+
+    results: Sequence[ImageResult] = field(default_factory=tuple)
+    notes: Sequence[str] = field(default_factory=tuple)
+
+
+_METATAG_MARKS: tuple[str, ...] = (":", "*", "~")
+"""图源自己查询语法里的字符：``rating:s``、``order:score``、``a*``、``~a``。"""
+
+
+def is_plain_tag(tag: str) -> bool:
+    """判断一个词是不是"普通标签"——只有普通标签才值得拿去查标签表。
+
+    ``rating:s`` / ``order:score`` / ``score:>10`` 是元语法，``-a`` 是排除，
+    ``a*`` 是通配，``~a`` 是或。把它们拿去查标签表只会把合法查询误报成"标签不存在"。
+    """
+    if not tag or tag.startswith("-"):
+        return False
+    return not any(mark in tag for mark in _METATAG_MARKS)
+
+
+def format_tag_problems(provider: str, missing: Sequence[str], suggestions: Mapping[str, Sequence[str]]) -> str:
+    """把"这些标签不存在 + 相近候选"拼成一句给调用方看的话。"""
+    parts: list[str] = []
+    for tag in missing:
+        near = list(suggestions.get(tag, ()))
+        hint = f"相近：{'、'.join(near)}" if near else "没有相近的"
+        parts.append(f"{tag}（{hint}）")
+    return f"{provider} 上没有这些标签：{'；'.join(parts)}"
 
 
 def as_int(value: object) -> int | None:
@@ -117,11 +154,12 @@ def missing_env(provider: Provider) -> list[str]:
     return [name for name in provider.requires if not os.environ.get(name)]
 
 
-async def collect(provider: Provider, ctx: Ctx, query: str, *, limit: int, opts: Any) -> list[ImageResult]:
+async def collect(provider: Provider, ctx: Ctx, query: str, *, limit: int, opts: Any) -> Collected:
     """按不透明游标翻页，直到凑够 ``limit`` 或没有下一页。
 
     框架只做 ``cursor = page.next_cursor`` 这一件事，**从不解释游标内容**；
-    同时顺带做一次调用内的 URL 归一化去重（免费的、下载之前的预筛）。
+    同时顺带做一次调用内的 URL 归一化去重（免费的、下载之前的预筛），
+    并把图源在 :attr:`Page.notes` 里带的说明汇总起来交给上层。
 
     Args:
         provider: 目标图源。
@@ -131,17 +169,21 @@ async def collect(provider: Provider, ctx: Ctx, query: str, *, limit: int, opts:
         opts: 图源私有参数对象。
 
     Returns:
-        去重后的结果列表，长度不超过 ``limit``；图源确实没有结果时返回空列表
+        去重后的候选（长度不超过 ``limit``）与图源说明；图源确实没有结果时候选为空
         （"一个结果都没有"的退出码由上层决定，不算图源故障）。
 
     Raises:
-        ProviderError: 图源在首页就失败，或返回的结构无法解析。
+        ProviderError: 图源失败，或返回的结构无法解析。
     """
     out: list[ImageResult] = []
+    notes: list[str] = []
     seen: set[str] = set()
     cursor: Cursor | None = None
     for _ in range(MAX_PAGES):
         page: Page = await provider.search(ctx, query, limit=limit - len(out), cursor=cursor, opts=opts)
+        for note in page.notes:
+            if note not in notes:
+                notes.append(note)
         for result in page.results:
             key = normalize_url(result.image_url)
             if not result.image_url or key in seen:
@@ -149,8 +191,8 @@ async def collect(provider: Provider, ctx: Ctx, query: str, *, limit: int, opts:
             seen.add(key)
             out.append(result)
             if len(out) >= limit:
-                return out
+                return Collected(results=tuple(out), notes=tuple(notes))
         if page.next_cursor is None or not page.results:
             break
         cursor = page.next_cursor
-    return out
+    return Collected(results=tuple(out), notes=tuple(notes))

@@ -76,10 +76,13 @@ class Page:
     Attributes:
         results: 本页结果。
         next_cursor: 下一页游标；``None`` 表示没有下一页。
+        notes: 图源想顺便告诉调用方的说明（例如"某个标签不存在，已改用其余标签"）。
+            框架把它汇总进 warnings 打到 stdout，图源自己不打印任何东西。
     """
 
     results: Sequence[ImageResult]
     next_cursor: Cursor | None = None
+    notes: Sequence[str] = ()
 
 
 @dataclass(frozen=True, slots=True)

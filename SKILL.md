@@ -111,14 +111,23 @@ python3 scripts/imgref.py search wikimedia "M1911 pistol" --exclude .out/prev/re
 
 **抓取型图源失效时不会报错，只会给错的图**——你看拼图时必须真的核对内容。不对就换 provider。
 
-### booru 类图源（`yandere` / `safebooru`）的标签词表
+### booru 类图源（`yandere` / `safebooru`）的标签
 
-这两个的查询串是**站内标签**，不是自然语言，而且各家词表**不通用**：同一个概念在
-danbooru 叫 `no_humans`，在 yande.re 可能根本不存在。标签不存在时接口返回
-「200 + 空数组」，于是表现为**退出码 2、一条都没有**，看起来像"没搜到"。
+查询串是**站内标签**（空格分隔），不是自然语言；各家词表**不通用**：`scenery` 在
+safebooru 有六万多张，在 yande.re **根本不存在**。
 
-- 先用一个确凿存在的单标签试水（`landscape`、`cat_ears`、`swimsuit` 这类），再往上叠。
-- 一次堆五个标签很容易全落空；宁可多搜几次。
+**这两个图源会在搜索前逐个校验标签**，所以不会再出现"标签写错的静默 0 条"：
+
+| 情况 | 表现 |
+|---|---|
+| 标签全都不存在 | 退出码 1，并告诉你不存在的是哪个、相近的有哪些（例如 `winter_scenery`） |
+| 只有部分不存在 | 照常出图，另打一行 `warn:` 说明丢掉了哪个、改用了哪些 |
+| 校验本身失败（网络） | 照原样搜索，并说明校验被跳过 |
+
+拿到 `warn:` 说某个标签不存在时，**用提示里的相近标签重试**，别去改别的词。
+
+- 标签长这样：`landscape`、`cat_ears`、`hatsune_miku_(cosplay)`。
+  `rating:s` / `order:score` / `-cat` / `a*` 是图源自己的语法，不会被拿去校验。
 - 想看原作者：读 manifest 的 `source` 字段（实测给的是 pixiv / x 的原帖链接）。
 - `yandere` 默认加 `rating:s`；要放宽用 `--rating all`（可能含露骨内容）。
 
